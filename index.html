@@ -168,9 +168,9 @@ body { margin: 0; }
   <p>הכנה לתפקיד Technical Support Engineer: מה Upwind עושה ואיך הפלטפורמה בנויה, יסודות Kubernetes, 9 תקלות שאבחנתי במעבדה שלי עם כל הפקודות, ודוגמאות לשיח עם לקוחות. המדריך מתעדכן עם כל שלב בהכנה.</p>
   <div class="meta">
     <span class="badge b-emerald">מעבדת K8s: 9/9</span>
-    <span class="badge b-amber">MySQL: בקרוב</span>
+    <span class="badge b-blue">MySQL: יסודות ✓ · JOIN בקרוב</span>
     <span class="badge b-amber">מטלה מדומה: בקרוב</span>
-    <span class="badge b-blue">עודכן 7.11.2026</span>
+    <span class="badge b-blue">עודכן 7.11.2026, 16:40</span>
   </div>
 </header>
 
@@ -182,6 +182,7 @@ body { margin: 0; }
     <li><a class="tab-btn" href="#lab">המעבדה</a></li>
     <li><a class="tab-btn" href="#map">מפת אבחון</a></li>
     <li><a class="tab-btn" href="#cmds">פקודות</a></li>
+    <li><a class="tab-btn" href="#sql">MySQL</a></li>
     <li><a class="tab-btn" href="#customer">שיח עם לקוח</a></li>
     <li><a class="tab-btn" href="#cloud">ענן</a></li>
     <li><a class="tab-btn" href="#practice">תרגול</a></li>
@@ -701,9 +702,140 @@ helm get values &lt;release&gt; -n &lt;ns&gt;</pre>
   </table></div>
 </section>
 
+<!-- ============ SQL ============ -->
+<section class="card" id="sql">
+  <h2>חלק 7: MySQL מהבסיס</h2>
+  <p>MySQL מופיע במשרה כדרישת <strong>חובה</strong>. בתמיכה משתמשים ב-SQL כדי לענות על שאלות כמו "אילו סנסורים של הלקוח הזה לא שלחו heartbeat ביממה האחרונה?". המסד שתרגלתי עליו בנוי כמו העולם של Upwind, עם דאטה בדוי.</p>
+
+  <h3>האנלוגיה: אקסל עם חוקים</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>מושג</th><th>באקסל</th><th>במסד שלנו</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Database</strong></td><td>קובץ האקסל</td><td><code>upwind_lab</code></td></tr>
+      <tr><td><strong>Table</strong></td><td>גיליון</td><td><code>sensors</code>, <code>customers</code></td></tr>
+      <tr><td><strong>Row</strong></td><td>שורה</td><td>סנסור אחד</td></tr>
+      <tr><td><strong>Column</strong></td><td>עמודה</td><td><code>status</code>, <code>version</code></td></tr>
+      <tr><td><strong>Primary Key</strong></td><td>מספר מזהה ייחודי</td><td><code>id</code></td></tr>
+      <tr><td><strong>Foreign Key</strong></td><td>עמודה שמצביעה לגיליון אחר</td><td><code>sensors.node_id</code> ← <code>nodes.id</code></td></tr>
+      <tr><td><strong>WHERE</strong></td><td>פילטר</td><td>רק השורות שעומדות בתנאי</td></tr>
+      <tr><td><strong>GROUP BY</strong></td><td>Pivot Table</td><td>חלוקה לערימות וחישוב על כל ערימה</td></tr>
+      <tr><td><strong>JOIN</strong></td><td>VLOOKUP</td><td>חיבור שורות מטבלאות שונות</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="diagram-card">
+    <div class="diagram-title">מבנה המסד</div>
+    <div class="diag-row">
+      <div class="diag-node purple"><span class="en">customers</span><span class="he">לקוח</span></div>
+      <div class="diag-node blue"><span class="en">clusters</span><span class="he">customer_id ←</span></div>
+      <div class="diag-node teal"><span class="en">nodes</span><span class="he">cluster_id ←</span></div>
+      <div class="diag-node emerald"><span class="en">sensors</span><span class="he">node_id ←</span></div>
+    </div>
+    <div class="diag-arrow">+ <span class="he">alerts: שייכות ל-cluster_id, ולפעמים גם ל-node_id</span></div>
+  </div>
+
+  <h3>הרמה בדוקר</h3>
+<pre>docker run -d --name lab-mysql -e MYSQL_ROOT_PASSWORD=lab -p 3307:3306 mysql:8.0
+docker logs lab-mysql                         <span class="c"># לחכות ל: ready for connections</span>
+docker cp mysql/seed.sql lab-mysql:/seed.sql
+docker exec lab-mysql sh -c "mysql -uroot -plab &lt; /seed.sql"
+docker exec -it lab-mysql mysql -uroot -plab upwind_lab
+<span class="c"># יציאה: exit · ניקוי בסוף: docker rm -f lab-mysql</span></pre>
+
+  <h3>שלב 1: להסתכל</h3>
+<pre>SHOW TABLES;
+DESCRIBE sensors;
+SELECT * FROM sensors;
+SELECT id, status, version FROM sensors;</pre>
+  <ul>
+    <li>כל פקודה מסתיימת ב-<code>;</code>. אם MySQL מציג <code>-&gt;</code>, הוא מחכה לה.</li>
+    <li>אותיות גדולות או קטנות לא משנות. כותבים פקודות באותיות גדולות רק בשביל הקריאות.</li>
+  </ul>
+
+  <h3>שלב 2: לסנן ולמיין</h3>
+<pre>SELECT id, node_id, status FROM sensors WHERE status = 'crashloop';
+SELECT id, version, status FROM sensors WHERE version != '2.5.1' ORDER BY version;
+SELECT id, status, last_heartbeat FROM sensors WHERE last_heartbeat &lt; '2026-11-05 08:00:00';
+SELECT id, status, last_heartbeat FROM sensors ORDER BY last_heartbeat DESC LIMIT 3;</pre>
+  <div class="tbl"><table>
+    <thead><tr><th>סימן</th><th>משמעות</th></tr></thead>
+    <tbody>
+      <tr><td><code>=</code></td><td>שווה</td></tr>
+      <tr><td><code>&lt;&gt;</code> או <code>!=</code></td><td>לא שווה. שניהם עובדים</td></tr>
+      <tr><td><code>&gt;</code> / <code>&lt;</code></td><td>גדול / קטן. בזמנים: אחרי / לפני</td></tr>
+      <tr><td><code>&gt;=</code> / <code>&lt;=</code></td><td>גדול או שווה / קטן או שווה</td></tr>
+      <tr><td><code>IS NULL</code> / <code>IS NOT NULL</code></td><td>ריק / לא ריק. <strong>אי אפשר</strong> <code>= NULL</code></td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li>טקסט ותאריכים בגרש בודד: <code>'crashloop'</code>. מספרים בלי גרש.</li>
+    <li><code>ORDER BY ... DESC</code> מהגדול לקטן, ובזמנים מהחדש לישן. <code>ASC</code> הפוך, וזו ברירת המחדל.</li>
+    <li>על זמנים כמעט תמיד שואלים טווח (<code>&lt;</code>, <code>&gt;</code>). <code>=</code> מוצא רק התאמה מדויקת עד השנייה.</li>
+  </ul>
+
+  <h3>שלב 3: לספור ולקבץ</h3>
+<pre>SELECT COUNT(*) FROM sensors;
+SELECT status, COUNT(*) AS cnt FROM sensors GROUP BY status ORDER BY cnt DESC;
+
+SELECT severity, COUNT(*) AS open_alerts
+FROM alerts
+WHERE resolved = 0
+GROUP BY severity
+ORDER BY open_alerts DESC;</pre>
+  <div class="tbl"><table>
+    <thead><tr><th>severity</th><th>open_alerts</th></tr></thead>
+    <tbody>
+      <tr><td>critical</td><td>4</td></tr>
+      <tr><td>high</td><td>2</td></tr>
+      <tr><td>medium</td><td>2</td></tr>
+      <tr><td>low</td><td>1</td></tr>
+    </tbody>
+  </table></div>
+  <p>סדר הכתיבה תמיד: <code>SELECT</code> ← <code>FROM</code> ← <code>WHERE</code> ← <code>GROUP BY</code> ← <code>ORDER BY</code> ← <code>LIMIT</code>. קודם מסננים שורות, ואחר כך מקבצים.</p>
+
+  <div class="callout c-warn">
+    <span class="lbl">הכלל של GROUP BY</span>
+    <p>כל עמודה ב-SELECT היא אחד משני דברים: <strong>העמודה שלפיה מקבצים</strong> (שם הערימה), או <strong>פונקציה</strong> כמו <code>COUNT</code>, <code>MAX</code> או <code>SUM</code> (חישוב על הערימה).</p>
+    <p>GROUP BY קובע <strong>איך לחלק</strong>. SELECT קובע <strong>מה להציג</strong> על כל ערימה.</p>
+  </div>
+
+  <div class="tbl"><table>
+    <thead><tr><th>פונקציה</th><th>מה היא מחזירה</th></tr></thead>
+    <tbody>
+      <tr><td><code>COUNT(*)</code></td><td>כמה שורות</td></tr>
+      <tr><td><code>MAX(col)</code> / <code>MIN(col)</code></td><td>הגבוה / הנמוך. בזמנים: האחרון / הראשון</td></tr>
+      <tr><td><code>SUM(col)</code> / <code>AVG(col)</code></td><td>סכום / ממוצע</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>הטעויות שלי, והלקחים</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>מה כתבתי</th><th>מה קרה</th><th>הלקח</th></tr></thead>
+    <tbody>
+      <tr><td><code>'select id, from ...</code></td><td>גרש בהתחלה, ופסיק בלי עמודה אחריו</td><td>גרש פותח טקסט (MySQL מציג <code>'&gt;</code>). פסיק מפריד בין עמודות</td></tr>
+      <tr><td><code>... group by severity;;</code></td><td><code>No query specified</code></td><td>נקודה-פסיק אחת מספיקה</td></tr>
+      <tr><td>סיננתי לפי version בלי להציג אותו, ומיינתי לפי עמודה אחרת</td><td>השאילתה רצה, אבל לא ענתה על השאלה</td><td>לבדוק את התוצאה מול <strong>ניסוח השאלה</strong>, לא רק "זה רץ"</td></tr>
+      <tr><td><code>GROUP BY resolved</code> במקום סינון</td><td>תשובה לשאלה אחרת (9 פתוחות, 3 סגורות)</td><td>סינון ב-WHERE, חלוקה ב-GROUP BY</td></tr>
+      <tr><td><code>SELECT resolved ... GROUP BY severity</code></td><td>המספרים נכונים, ואין לדעת איזו שורה היא איזו</td><td>להציג את עמודת הקיבוץ. ולתת שמות עם <code>AS</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout c-interview">
+    <span class="lbl">טריק לבדיקה עצמית</span>
+    <p>להשוות לסכום שכבר ידוע. 9 התראות פתוחות, אז הסכום של <code>open_alerts</code> לפי חומרה חייב להיות 9 (4+2+2+1).</p>
+  </div>
+
+  <h3>הבא: JOIN</h3>
+  <p>ב-<code>sensors</code> יש <code>node_id = 2002</code>. איזה שרת זה? של איזה לקוח? התשובה בטבלאות אחרות, ו-JOIN מחבר ביניהן:</p>
+<pre>SELECT s.id, s.status, n.hostname
+FROM sensors s
+JOIN nodes n ON s.node_id = n.id;</pre>
+  <p><span class="badge b-amber">בקרוב</span> INNER JOIN מול LEFT JOIN, חיבור של ארבע טבלאות, ומציאת nodes בלי סנסור.</p>
+</section>
+
 <!-- ============ CUSTOMER ============ -->
 <section class="card" id="customer">
-  <h2>חלק 7: שיח עם לקוח</h2>
+  <h2>חלק 8: שיח עם לקוח</h2>
   <p>בתפקיד הזה הלקוח כותב בעיקר ב-Slack, בצ'אט או במייל, ובאנגלית. המטרה היא להראות שליטה, לצמצם את הבעיה מהר, ולבקש בכל פעם רק את מה שצריך.</p>
 
   <h3>דוגמה: "החלפנו credentials ועכשיו הסנסור לא עולה"</h3>
@@ -749,7 +881,7 @@ Attached: logs, describe pod, helm values (credentials removed)</pre>
 
 <!-- ============ CLOUD ============ -->
 <section class="card" id="cloud">
-  <h2>חלק 8: ענן ו-AWS בקצרה</h2>
+  <h2>חלק 9: ענן ו-AWS בקצרה</h2>
   <div class="callout c-analogy">
     <span class="lbl">אנלוגיה: בניין משרדים</span>
     <p><strong>חשבון AWS</strong> הוא בניין. <strong>Region</strong> הוא סניף בעיר אחרת. <strong>VPC</strong> הוא קומה פרטית. <strong>IAM</strong> היא מחלקת הביטחון.</p>
@@ -773,7 +905,7 @@ aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,Attribut
 
 <!-- ============ PRACTICE ============ -->
 <section class="card" id="practice">
-  <h2>חלק 9: תרגול. לחץ על שאלה כדי לראות תשובה</h2>
+  <h2>חלק 10: תרגול. לחץ על שאלה כדי לראות תשובה</h2>
   <details class="qa"><summary>למה הסנסור של Upwind הוא DaemonSet ולא Deployment?</summary><div class="ans">כי הוא צריך לראות כל node. DaemonSet מבטיח פוד אחד בכל node, כולל nodes חדשים שנוספים אוטומטית. Deployment מבטיח מספר עותקים, לא פיזור.</div></details>
   <details class="qa"><summary>DESIRED 3 ויש 5 nodes. מה הדבר הראשון שבודקים?</summary><div class="ans">Taints על שני ה-nodes החסרים (<code>get nodes</code> עם עמודת TAINTS), ואחר כך nodeSelector או affinity ב-DaemonSet. תיקון אצל לקוח: toleration ב-Helm values.</div></details>
   <details class="qa"><summary>פוד ב-CrashLoopBackOff. איזו פקודה, ולמה דווקא היא?</summary><div class="ans"><code>kubectl logs &lt;pod&gt; --previous</code>. הקונטיינר הנוכחי אולי רק עלה ועוד לא כתב כלום. הסיבה לקריסה נמצאת בלוג של הקונטיינר הקודם. אחר כך <code>describe</code> בשביל Exit Code.</div></details>
@@ -792,7 +924,8 @@ aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,Attribut
     <li><time>3.11.2026</time><span>ראיון טלפוני עם אפרת ינאי (Head of WW Technical Recruiting). עברתי.</span></li>
     <li><time>4.11.2026</time><span>ראיון סינון טכני עם ליטל. עברתי. השלב הבא: מטלת בית ביום ראשון.</span></li>
     <li><time>7.11.2026</time><span>מעבדת Kubernetes: 8 תקלות שתולות ועוד אחת אמיתית (taints). כולן אובחנו, 8 תוקנו. נבנה המדריך הזה.</span></li>
-    <li><time>בקרוב</time><span>MySQL: JOIN, GROUP BY, HAVING, ו-LEFT JOIN למציאת חוסרים, על דאטה של סנסורים והתראות.</span></li>
+    <li><time>7.11.2026</time><span>MySQL בדוקר: SELECT, WHERE, סימני השוואה, ORDER BY, LIMIT, COUNT ו-GROUP BY. תיעדתי את הטעויות שלי כלקחים.</span></li>
+    <li><time>בקרוב</time><span>MySQL: JOIN, LEFT JOIN למציאת חוסרים, HAVING.</span></li>
     <li><time>בקרוב</time><span>מטלה מדומה: טיקט לקוח, שאילתות SQL ותשובה באנגלית.</span></li>
   </ul>
 </section>
