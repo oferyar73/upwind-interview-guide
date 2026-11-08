@@ -170,7 +170,7 @@ body { margin: 0; }
     <span class="badge b-emerald">מעבדת K8s: 9/9</span>
     <span class="badge b-blue">MySQL: יסודות ✓ · JOIN בקרוב</span>
     <span class="badge b-amber">מטלה מדומה: בקרוב</span>
-    <span class="badge b-blue">עודכן 7.11.2026, 16:40</span>
+    <span class="badge b-blue">עודכן 8.11.2026</span>
   </div>
 </header>
 
@@ -186,6 +186,7 @@ body { margin: 0; }
     <li><a class="tab-btn" href="#customer">שיח עם לקוח</a></li>
     <li><a class="tab-btn" href="#cloud">ענן</a></li>
     <li><a class="tab-btn" href="#practice">תרגול</a></li>
+    <li><a class="tab-btn" href="#ec2">EC2</a></li>
     <li><a class="tab-btn" href="#log">יומן</a></li>
   </ul>
 </nav>
@@ -917,6 +918,32 @@ aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,Attribut
   <details class="qa"><summary>הלקוח אומר "תיקנתי" ועדיין לא עובד. מה עושים?</summary><div class="ans">בודקים מה הוא שינה בפועל: <code>describe</code> על הפוד החדש, או <code>helm get values</code>. במעבדה זה קרה לי: שיניתי containerPort במקום את פורט ה-probe.</div></details>
 </section>
 
+<!-- ============ EC2 ============ -->
+<section class="card" id="ec2">
+  <h2>חלק 11: הרמת EC2 מאובטח, צ'קליסט</h2>
+  <p>מה שלמדתי בהרמת שרת EC2 ראשון. ההחלטות, ולמה כל אחת חשובה מבחינת אבטחה.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>החלטה</th><th>ברירת המחדל</th><th>מה בחרתי</th><th>למה</th></tr></thead>
+    <tbody>
+      <tr><td>מערכת הפעלה</td><td>Amazon Linux 2023</td><td>Ubuntu 22.04 LTS, image רשמי של Canonical</td><td>לבדוק תאריך סוף תמיכה (endoflife.date). Amazon Linux 2 הסתיימה ב-30.6.2026</td></tr>
+      <tr><td>מקור ה-AMI</td><td>כל מה שעונה לשם</td><td>Verified provider, מחיר $0, x86_64</td><td>כל אחד יכול לפרסם AMI בשם "ubuntu". בודקים את המפרסם, לא את השם</td></tr>
+      <tr><td>סוג שרת</td><td>m5.large (הוחלף לבד אחרי בחירת AMI מה-Marketplace)</td><td>t3.micro, Credit: Standard</td><td>תמיד לבדוק את ה-Summary לפני Launch. Unlimited עלול לחייב</td></tr>
+      <tr><td>מפתח</td><td>RSA</td><td>ED25519, .pem, בתיקיית .ssh</td><td>מפתח פרטי לא יושב ליד קבצים שמשתפים. ב-Windows: icacls במקום chmod 400</td></tr>
+      <tr><td>Security Group</td><td>SSH מ-<code>0.0.0.0/0</code></td><td>SSH מ-My IP <code>/32</code> בלבד</td><td>בוטים סורקים פורט 22 כל הזמן. Defense in depth: IP + מפתח</td></tr>
+      <tr><td>דיסק</td><td>לא מוצפן</td><td>gp3, Encrypted (aws/ebs), Delete on termination</td><td>מגן גם על snapshots. בלי דיסקים יתומים שממשיכים לעלות כסף</td></tr>
+      <tr><td>Metadata</td><td>V1 ו-V2</td><td>IMDSv2 בלבד</td><td>חוסם גניבת credentials דרך SSRF. בדיקה: בלי token מתקבל 401</td></tr>
+      <tr><td>הרשאות AWS לשרת</td><td>—</td><td>כבוי</td><td>Least privilege</td></tr>
+    </tbody>
+  </table></div>
+<pre><span class="c"># אחרי ההרמה</span>
+ssh -i ~/.ssh/key.pem ubuntu@&lt;public-ip&gt;
+sudo apt update &amp;&amp; sudo apt upgrade -y &amp;&amp; sudo reboot
+uname -r                         <span class="c"># הקרנל החדש נטען?</span>
+nproc &amp;&amp; free -h &amp;&amp; df -h /       <span class="c"># המשאבים תואמים?</span>
+curl -s -o /dev/null -w "%{http_code}\n" http://169.254.169.254/latest/meta-data/   <span class="c"># 401 = IMDSv1 חסום</span></pre>
+  <div class="callout c-interview"><span class="lbl">בפרודקשן</span><p>SSM Session Manager במקום פורט 22 פתוח, Elastic IP או שרת פרטי, VPC ייעודי עם private subnets ו-NAT, ועדכונים אוטומטיים.</p></div>
+</section>
+
 <!-- ============ LOG ============ -->
 <section class="card" id="log">
   <h2>יומן התקדמות</h2>
@@ -925,7 +952,8 @@ aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,Attribut
     <li><time>4.11.2026</time><span>ראיון סינון טכני עם ליטל. עברתי. השלב הבא: מטלת בית ביום ראשון.</span></li>
     <li><time>7.11.2026</time><span>מעבדת Kubernetes: 8 תקלות שתולות ועוד אחת אמיתית (taints). כולן אובחנו, 8 תוקנו. נבנה המדריך הזה.</span></li>
     <li><time>7.11.2026</time><span>MySQL בדוקר: SELECT, WHERE, סימני השוואה, ORDER BY, LIMIT, COUNT ו-GROUP BY. תיעדתי את הטעויות שלי כלקחים.</span></li>
-    <li><time>בקרוב</time><span>MySQL: JOIN, LEFT JOIN למציאת חוסרים, HAVING.</span></li>
+    <li><time>7.11.2026</time><span>MySQL: JOIN בשרשרת של 4 טבלאות, ו-LEFT JOIN עם IS NULL למציאת nodes בלי סנסור.</span></li>
+    <li><time>8.11.2026</time><span>יסודות ענן: Shared Responsibility, IAM, CloudTrail ו-VPC. התקבלה המטלה האמיתית. משימה 1 (הרמת EC2) הושלמה ותועדה.</span></li>
     <li><time>בקרוב</time><span>מטלה מדומה: טיקט לקוח, שאילתות SQL ותשובה באנגלית.</span></li>
   </ul>
 </section>
